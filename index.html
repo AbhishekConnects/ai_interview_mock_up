@@ -28,6 +28,10 @@
             <div id="round-content" style="display: none;">
                 <div id="round-header">
                     <h2 id="round-title"></h2>
+                    <div class="timer-container">
+                        <span class="timer-label">Time Remaining:</span>
+                        <span id="round-timer" class="timer normal">00:00</span>
+                    </div>
                     <div class="difficulty-selector">
                         <label>Difficulty: </label>
                         <select id="difficulty-select">
@@ -52,6 +56,23 @@
                 </div>
                 
                 <div id="action-buttons"></div>
+                
+                <div id="code-output" style="display: none;">
+                    <h4>Code Output</h4>
+                    <textarea id="output-area" readonly></textarea>
+                </div>
+                
+                <div id="diagram-editor-container" style="display: none;">
+                    <div class="diagram-header">
+                        <h4>📊 Design Diagram</h4>
+                        <div class="diagram-controls">
+                            <button id="save-diagram" class="primary-btn">Save Diagram</button>
+                            <button id="submit-diagram" class="primary-btn">Submit Diagram</button>
+                            <button id="close-diagram" class="secondary-btn">Close Editor</button>
+                        </div>
+                    </div>
+                    <div id="diagram-iframe-container"></div>
+                </div>
                 
                 <div id="hint-section" style="display: none;">
                     <div class="hint-container">

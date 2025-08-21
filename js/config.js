@@ -17,13 +17,13 @@ export const ROUNDS = {
     lld: {
         title: 'Low-Level Design',
         welcome: 'Welcome to the LLD round. You\'ll design a component with classes, APIs, and OOP principles. Ready to start?',
-        buttons: ['Propose Design', 'Clarify Requirement'],
+        buttons: ['Propose Design', 'Open Diagram Editor', 'Clarify Requirement'],
         showCode: false
     },
     hld: {
         title: 'High-Level Design',
         welcome: 'Welcome to the HLD round. Design a large-scale system architecture. Think about scalability and technology choices. Ready?',
-        buttons: ['Propose Architecture', 'Ask for Clarification'],
+        buttons: ['Propose Architecture', 'Open Diagram Editor', 'Ask for Clarification'],
         showCode: false
     },
     behavioral: {

@@ -4,7 +4,7 @@ export class InterviewState {
         this.currentRound = null;
         this.completedRounds = [];
         this.roundProblems = {}; // Preserve problems across rounds
-        this.roundData = {};
+        this.roundData = {}; // Store raw problem data
         this.isListening = false;
         this.loadFromStorage();
     }
@@ -15,6 +15,7 @@ export class InterviewState {
             if (saved) {
                 const data = JSON.parse(saved);
                 this.roundProblems = data.roundProblems || {};
+                this.roundData = data.roundData || {};
                 this.completedRounds = data.completedRounds || [];
             }
         } catch (error) {
@@ -26,6 +27,7 @@ export class InterviewState {
         try {
             const data = {
                 roundProblems: this.roundProblems,
+                roundData: this.roundData,
                 completedRounds: this.completedRounds
             };
             localStorage.setItem('interviewState', JSON.stringify(data));
@@ -70,8 +72,18 @@ export class InterviewState {
         localStorage.removeItem('interviewState');
     }
 
+    setProblemData(round, data) {
+        this.roundData[round] = data;
+        this.saveToStorage();
+    }
+
+    getProblemData(round) {
+        return this.roundData[round];
+    }
+
     clearRoundProblem(round) {
         delete this.roundProblems[round];
+        delete this.roundData[round];
         this.saveToStorage();
     }
 }

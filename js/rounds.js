@@ -1,4 +1,5 @@
 import { GeminiAPI } from './api.js';
+import { LeetCodeAPI } from './leetcode-api.js';
 import { ROUNDS } from './config.js';
 import { state } from './state.js';
 
@@ -21,27 +22,38 @@ export class RoundManager {
             
             // Also set test cases for existing DSA problems
             if (roundType === 'dsa') {
-                const testCases = this.extractTestCases(existingProblem);
+                const problemData = state.getProblemData(roundType);
+                const testCases = problemData ? LeetCodeAPI.extractTestCases(problemData) : this.extractTestCases(existingProblem);
                 this.ui.setTestCases(testCases);
             }
             return;
         }
 
-        // Generate new problem only if not exists
+        // Generate new problem
         const difficulty = this.ui.getCurrentDifficulty();
-        const prompt = this.getPromptForRound(roundType, difficulty);
-        const problem = await GeminiAPI.call(prompt);
         
-        // Store problem in state
-        state.setProblem(roundType, problem);
-        
-        // Extract and set test cases for DSA round
         if (roundType === 'dsa') {
-            const testCases = this.extractTestCases(problem);
+            // Use LeetCode API for DSA problems
+            const problemData = await LeetCodeAPI.getRandomProblem(difficulty);
+            const problem = LeetCodeAPI.formatProblemForDisplay(problemData);
+            
+            // Store both formatted problem and raw data
+            state.setProblem(roundType, problem);
+            state.setProblemData(roundType, problemData);
+            
+            // Extract and set test cases
+            const testCases = LeetCodeAPI.extractTestCases(problemData);
             this.ui.setTestCases(testCases);
+            
+            this.ui.setProblemArea(`<div><strong>LeetCode Problem (${difficulty.toUpperCase()}):</strong></div><div>${problem.replace(/\n/g, '<br>')}</div>`);
+        } else {
+            // Use Gemini for other rounds
+            const prompt = this.getPromptForRound(roundType, difficulty);
+            const problem = await GeminiAPI.call(prompt);
+            
+            state.setProblem(roundType, problem);
+            this.ui.setProblemArea(`<div><strong>Problem (${difficulty.toUpperCase()}):</strong></div><div>${problem.replace(/\n/g, '<br>')}</div>`);
         }
-        
-        this.ui.setProblemArea(`<div><strong>Problem (${difficulty.toUpperCase()}):</strong></div><div>${problem.replace(/\n/g, '<br>')}</div>`);
     }
 
     getPromptForRound(roundType, difficulty = 'easy') {
@@ -121,6 +133,11 @@ Respond as if you're speaking directly to the candidate in an interview setting.
         return await GeminiAPI.call(prompt);
     }
 
+    async evaluateDiagram(diagramXML, roundType) {
+        const problemStatement = state.getProblem(roundType) || 'Design problem';
+        return await GeminiAPI.evaluateDiagram(diagramXML, roundType, problemStatement);
+    }
+
 
 
     async generateOverallFeedback() {
@@ -132,19 +149,29 @@ Respond as if you're speaking directly to the candidate in an interview setting.
         // Clear existing problem to force new generation
         state.clearRoundProblem(roundType);
         
-        const prompt = this.getPromptForRound(roundType, difficulty);
-        const problem = await GeminiAPI.call(prompt);
-        
-        // Store new problem in state
-        state.setProblem(roundType, problem);
-        
-        // Extract and set test cases for DSA round
         if (roundType === 'dsa') {
-            const testCases = this.extractTestCases(problem);
+            // Use LeetCode API for DSA problems
+            const problemData = await LeetCodeAPI.getRandomProblem(difficulty);
+            const problem = LeetCodeAPI.formatProblemForDisplay(problemData);
+            
+            // Store both formatted problem and raw data
+            state.setProblem(roundType, problem);
+            state.setProblemData(roundType, problemData);
+            
+            // Extract and set test cases
+            const testCases = LeetCodeAPI.extractTestCases(problemData);
             this.ui.setTestCases(testCases);
+            
+            this.ui.setProblemArea(`<div><strong>LeetCode Problem (${difficulty.toUpperCase()}) - Fresh:</strong></div><div>${problem.replace(/\n/g, '<br>')}</div>`);
+        } else {
+            // Use Gemini for other rounds
+            const prompt = this.getPromptForRound(roundType, difficulty);
+            const problem = await GeminiAPI.call(prompt);
+            
+            state.setProblem(roundType, problem);
+            this.ui.setProblemArea(`<div><strong>Problem (${difficulty.toUpperCase()}) - Fresh:</strong></div><div>${problem.replace(/\n/g, '<br>')}</div>`);
         }
         
-        this.ui.setProblemArea(`<div><strong>Problem (${difficulty.toUpperCase()}) - Fresh:</strong></div><div>${problem.replace(/\n/g, '<br>')}</div>`);
-        return problem;
+        return state.getProblem(roundType);
     }
 }

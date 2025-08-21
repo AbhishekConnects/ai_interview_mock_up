@@ -1,14 +1,13 @@
 #!/bin/bash
 echo "Starting AI Mock Interview System..."
-echo "This will start both the web server and code execution proxy."
 echo ""
 
 # Start proxy server in background
-echo "Starting code execution proxy on port 8001..."
+echo "Starting JDoodle proxy on port 8001..."
 python3 proxy-server.py &
 PROXY_PID=$!
 
-# Wait a moment for proxy to start
+# Wait for proxy to start
 sleep 2
 
 # Start main server

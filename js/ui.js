@@ -2,6 +2,7 @@ import { ROUNDS } from './config.js';
 import { state } from './state.js';
 import { CodeEditor } from './editor.js';
 import { CodeExecutor } from './api.js';
+import { DiagramEditor, DiagramAPI } from './diagram-integration.js';
 
 export class UIManager {
     constructor() {
@@ -32,6 +33,11 @@ export class UIManager {
         this.hintInput = document.getElementById('hint-input');
         this.submitHintBtn = document.getElementById('submit-hint');
         this.cancelHintBtn = document.getElementById('cancel-hint');
+        this.diagramContainer = document.getElementById('diagram-editor-container');
+        this.saveDiagramBtn = document.getElementById('save-diagram');
+        this.submitDiagramBtn = document.getElementById('submit-diagram');
+        this.closeDiagramBtn = document.getElementById('close-diagram');
+        this.diagramEditor = null;
     }
 
     async setupRound(roundType) {
@@ -46,9 +52,17 @@ export class UIManager {
         if (config.showCode) {
             await this.setupCodeEditor();
             this.textInput.style.display = 'none';
-        } else {
+            this.diagramContainer.style.display = 'none';
+        } else if (roundType === 'lld' || roundType === 'hld') {
+            // Show diagram editor for design rounds
             this.codeEditorContainer.style.display = 'none';
             this.textInput.style.display = 'block';
+            this.diagramContainer.style.display = 'none';
+        } else {
+            // Behavioral round
+            this.codeEditorContainer.style.display = 'none';
+            this.textInput.style.display = 'block';
+            this.diagramContainer.style.display = 'none';
         }
         
         // Create action buttons
@@ -62,6 +76,8 @@ export class UIManager {
         
         // Setup hint section
         this.setupHintSection();
+        
+
     }
 
     async setupCodeEditor() {
@@ -71,9 +87,9 @@ export class UIManager {
             // Add language selector
             this.addLanguageSelector();
             
-            // Initialize Monaco Editor
+            // Initialize Monaco Editor with test cases
             this.codeEditor = new CodeEditor('monaco-container');
-            await this.codeEditor.initialize();
+            await this.codeEditor.initialize(this.testCases);
         }
     }
 
@@ -152,6 +168,11 @@ export class UIManager {
                 <div class="test-result" id="result-${index}"></div>
             </div>
         `).join('');
+        
+        // Update code editor with new test cases
+        if (this.codeEditor) {
+            this.codeEditor.setTestCases(testCases);
+        }
     }
 
     async runTestCases() {
@@ -166,141 +187,33 @@ export class UIManager {
             return;
         }
         
-        this.setFeedback('Running test cases...');
+        this.setFeedback('Running all test cases...');
         
+        // Execute all test cases in single API call
+        const result = await CodeExecutor.executeWithTestCases(code, this.currentLanguage, this.testCases);
+        
+        if (result.error) {
+            this.setFeedback(`Error: ${result.error}`);
+            return;
+        }
+        
+        // Update UI with results
         let passedTests = 0;
-        
-        for (let i = 0; i < this.testCases.length; i++) {
-            const testCase = this.testCases[i];
-            const resultDiv = document.getElementById(`result-${i}`);
+        result.testResults.forEach((testResult, index) => {
+            const resultDiv = document.getElementById(`result-${index}`);
             
-            // Use API for code execution
-            const testCode = this.injectTestInput(code, testCase.input);
-            const result = await CodeExecutor.execute(testCode, this.currentLanguage);
-            
-            if (result.error) {
-                resultDiv.innerHTML = `<span class="test-fail">❌ Error: ${result.error}</span>`;
+            if (testResult.passed) {
+                resultDiv.innerHTML = `<span class="test-pass">✅ Passed</span>`;
+                passedTests++;
             } else {
-                const output = result.output.trim();
-                const expected = testCase.output.trim();
-                
-                if (this.isOutputMatch(output, expected)) {
-                    resultDiv.innerHTML = `<span class="test-pass">✅ Passed</span>`;
-                    passedTests++;
-                } else {
-                    resultDiv.innerHTML = `<span class="test-fail">❌ Got: ${output}</span>`;
-                }
+                resultDiv.innerHTML = `<span class="test-fail">❌ Got: ${testResult.actual}</span>`;
             }
-        }
+        });
         
-        this.setFeedback(`Test Results: ${passedTests}/${this.testCases.length} tests passed`);
+        this.setFeedback(`Test Results: ${passedTests}/${this.testCases.length} tests passed | Memory: ${result.memory}KB | Time: ${result.cpuTime}s`);
     }
     
-    simulateTestCase(code, testCase, language) {
-        // Smart simulation based on code patterns and test input
-        const input = testCase.input;
-        const expected = testCase.output;
-        
-        // Basic pattern matching for common problems
-        if (code.toLowerCase().includes('reverse')) {
-            return { output: input.split('').reverse().join(''), error: null };
-        }
-        
-        if (code.toLowerCase().includes('sum') || code.toLowerCase().includes('add')) {
-            const nums = input.match(/\d+/g);
-            if (nums) {
-                const sum = nums.reduce((a, b) => parseInt(a) + parseInt(b), 0);
-                return { output: sum.toString(), error: null };
-            }
-        }
-        
-        if (code.toLowerCase().includes('factorial')) {
-            const num = parseInt(input);
-            if (!isNaN(num) && num >= 0) {
-                let fact = 1;
-                for (let i = 2; i <= num; i++) fact *= i;
-                return { output: fact.toString(), error: null };
-            }
-        }
-        
-        if (code.toLowerCase().includes('fibonacci') || code.toLowerCase().includes('fib')) {
-            const num = parseInt(input);
-            if (!isNaN(num) && num >= 0) {
-                if (num <= 1) return { output: num.toString(), error: null };
-                let a = 0, b = 1;
-                for (let i = 2; i <= num; i++) {
-                    [a, b] = [b, a + b];
-                }
-                return { output: b.toString(), error: null };
-            }
-        }
-        
-        if (code.toLowerCase().includes('palindrome')) {
-            const isPalindrome = input === input.split('').reverse().join('');
-            return { output: isPalindrome.toString(), error: null };
-        }
-        
-        // Default: try to return expected output for demo
-        return { output: expected, error: null };
-    }
-    
-    isOutputMatch(actual, expected) {
-        // Clean both outputs
-        const cleanActual = actual.replace(/\[SIMULATION\]\s*/, '').replace(/\[DEMO MODE\].*?\n/, '').trim();
-        const cleanExpected = expected.trim();
-        
-        // Exact match
-        if (cleanActual === cleanExpected) return true;
-        
-        // Flexible matching for numbers
-        if (!isNaN(cleanActual) && !isNaN(cleanExpected)) {
-            return parseFloat(cleanActual) === parseFloat(cleanExpected);
-        }
-        
-        // Boolean matching
-        if ((cleanActual === 'true' || cleanActual === 'false') && 
-            (cleanExpected === 'true' || cleanExpected === 'false')) {
-            return cleanActual === cleanExpected;
-        }
-        
-        // Case insensitive for strings
-        return cleanActual.toLowerCase() === cleanExpected.toLowerCase();
-    }
-    
-    injectTestInput(code, input) {
-        // Enhanced input injection for different languages
-        const inputValue = input.replace(/"/g, '\\"'); // Escape quotes
-        
-        switch (this.currentLanguage) {
-            case 'scala':
-                return code.replace(
-                    /(\/\/ Your code here|val input = .*)/g, 
-                    `val input = "${inputValue}"`
-                );
-            case 'javascript':
-                return code.replace(
-                    /(\/\/ Your code here|const input = .*)/g,
-                    `const input = "${inputValue}";\n    // Your code here`
-                );
-            case 'python':
-                return code.replace(
-                    /(# Your code here|input = .*)/g,
-                    `input = "${inputValue}"\n    # Your code here`
-                );
-            case 'java':
-                return code.replace(
-                    /(\/\/ Your code here|String input = .*)/g,
-                    `String input = "${inputValue}";\n        // Your code here`
-                );
-            case 'cpp':
-                return code.replace(
-                    /(\/\/ Your code here|string input = .*)/g,
-                    `string input = "${inputValue}";\n    // Your code here`
-                );
-            default:
-                return code;
-        }
-    }
+
 
     createActionButtons(buttons) {
         this.actionButtons.innerHTML = '';
@@ -312,30 +225,6 @@ export class UIManager {
             this.actionButtons.appendChild(btn);
         });
     }
-    
-    setTestCases(testCases) {
-        if (this.codeEditor) {
-            this.codeEditor.setTestCases = (cases) => {
-                this.testCases = cases;
-                const container = document.getElementById('test-cases-container');
-                
-                if (cases.length === 0) {
-                    container.innerHTML = '<div class="no-tests">No test cases available</div>';
-                    return;
-                }
-                
-                container.innerHTML = cases.map((test, index) => `
-                    <div class="test-case">
-                        <div class="test-label">Test Case ${index + 1}:</div>
-                        <div class="test-input"><strong>Input:</strong> ${test.input}</div>
-                        <div class="test-output"><strong>Expected:</strong> ${test.output}</div>
-                        <div class="test-result" id="result-${index}"></div>
-                    </div>
-                `).join('');
-            };
-            this.codeEditor.setTestCases(testCases);
-        }
-    }
 
     async handleActionClick(action) {
         if (action === 'Run Code' && this.codeEditor) {
@@ -343,6 +232,12 @@ export class UIManager {
         } else if (action === 'Ask for Hint') {
             // Show inline hint section
             this.showHintSection();
+        } else if (action === 'Open Diagram Editor') {
+            // Show diagram editor
+            this.diagramContainer.style.display = 'block';
+            if (!this.diagramEditor) {
+                this.setupDiagramEditor(state.currentRound);
+            }
         } else {
             // Dispatch to round manager
             const event = new CustomEvent('actionClicked', { detail: { action } });
@@ -361,15 +256,21 @@ export class UIManager {
         
         const result = await CodeExecutor.execute(code, this.currentLanguage);
         
-        let output = '<div><strong>Execution Result:</strong></div>';
+        // Show output area
+        const outputSection = document.getElementById('code-output');
+        const outputArea = document.getElementById('output-area');
+        
+        outputSection.style.display = 'block';
+        
         if (result.error) {
-            output += `<div style="color: red;"><strong>Error:</strong><br>${result.error}</div>`;
+            outputArea.value = `Error: ${result.error}`;
+            outputArea.style.color = 'red';
         } else {
-            output += `<div><strong>Output:</strong><br><pre>${result.output}</pre></div>`;
-            output += `<div><strong>Memory:</strong> ${result.memory} KB | <strong>CPU Time:</strong> ${result.cpuTime}s</div>`;
+            outputArea.value = `Output:\n${result.output}\n\nMemory: ${result.memory} KB | CPU Time: ${result.cpuTime}s`;
+            outputArea.style.color = 'black';
         }
         
-        this.setFeedback(output);
+        this.setFeedback('Code executed successfully!');
     }
 
     updateRoundStatus(roundType) {
@@ -471,6 +372,51 @@ export class UIManager {
     requestHint(question) {
         this.hideHintSection();
         const event = new CustomEvent('hintRequested', { detail: { question } });
+        document.dispatchEvent(event);
+    }
+
+    async setupDiagramEditor(roundType) {
+        if (this.diagramEditor?.initialized) return;
+        
+        this.diagramEditor = new DiagramEditor('diagram-iframe-container');
+        
+        const existingXML = await DiagramAPI.loadDiagram(roundType);
+        
+        this.diagramEditor.onSave(async (xml) => {
+            await DiagramAPI.saveDiagram(roundType, xml);
+            this.setFeedback('Diagram saved successfully!');
+        });
+        
+        this.saveDiagramBtn.onclick = () => {
+            this.diagramEditor.save();
+        };
+        
+        this.submitDiagramBtn.onclick = () => {
+            this.submitDiagram();
+        };
+        
+        this.closeDiagramBtn.onclick = () => {
+            this.diagramContainer.style.display = 'none';
+        };
+        
+        this.diagramEditor.embed(existingXML);
+    }
+
+    getDiagramXML() {
+        return this.diagramEditor ? this.diagramEditor.getCurrentXML() : '';
+    }
+
+    async submitDiagram() {
+        const diagramXML = this.getDiagramXML();
+        if (!diagramXML) {
+            this.setFeedback('Please create a diagram first.');
+            return;
+        }
+        
+        this.setFeedback('Evaluating diagram...');
+        const event = new CustomEvent('diagramSubmitted', { 
+            detail: { diagramXML, roundType: state.currentRound } 
+        });
         document.dispatchEvent(event);
     }
 }

@@ -22,18 +22,60 @@ export class GeminiAPI {
             return `Error: ${error.message}`;
         }
     }
+
+    static async evaluateDiagram(diagramXML, roundType, problemStatement) {
+        const prompt = this.getDiagramEvaluationPrompt(diagramXML, roundType, problemStatement);
+        return await this.call(prompt);
+    }
+
+    static getDiagramEvaluationPrompt(diagramXML, roundType, problemStatement) {
+        const basePrompt = `You are an experienced technical interviewer evaluating a ${roundType.toUpperCase()} diagram submission.
+
+Problem Statement:
+${problemStatement}
+
+Diagram XML (draw.io format):
+${diagramXML}
+
+Please evaluate this diagram and provide detailed feedback on:`;
+        
+        if (roundType === 'lld') {
+            return `${basePrompt}
+
+1. **Class Design**: Are classes well-defined with appropriate responsibilities?
+2. **OOP Principles**: Proper use of encapsulation, inheritance, polymorphism, abstraction
+3. **Design Patterns**: Appropriate use of design patterns if applicable
+4. **API Design**: Clear method signatures and interfaces
+5. **Relationships**: Proper associations, compositions, dependencies
+6. **Extensibility**: How easy would it be to extend this design?
+7. **SOLID Principles**: Adherence to SOLID principles
+
+Provide specific suggestions for improvement and rate the design on a scale of 1-10.`;
+        } else if (roundType === 'hld') {
+            return `${basePrompt}
+
+1. **Architecture**: Overall system architecture and component separation
+2. **Scalability**: Can this design handle the required scale?
+3. **Data Flow**: Clear data flow between components
+4. **Technology Choices**: Appropriate database, caching, messaging choices
+5. **Load Balancing**: Proper distribution of load
+6. **Fault Tolerance**: How does the system handle failures?
+7. **Performance**: Bottlenecks and optimization opportunities
+8. **Security**: Basic security considerations
+
+Provide specific suggestions for improvement and rate the architecture on a scale of 1-10.`;
+        }
+        
+        return `${basePrompt}
+
+General design principles, clarity, and completeness. Rate on a scale of 1-10.`;
+    }
 }
 
 // JDoodle Code Execution Service
 export class CodeExecutor {
-    static async execute(code, language) {
-        // Check if API credentials are configured
-        if (!CONFIG.JDOODLE_CLIENT_ID || CONFIG.JDOODLE_CLIENT_ID === 'your_jdoodle_client_id') {
-            return this.simulateExecution(code, language);
-        }
-
+    static async execute(code, language, stdin = "") {
         try {
-            // Try proxy server first
             const response = await fetch('http://localhost:8001/execute', {
                 method: 'POST',
                 headers: {
@@ -43,16 +85,24 @@ export class CodeExecutor {
                     clientId: CONFIG.JDOODLE_CLIENT_ID,
                     clientSecret: CONFIG.JDOODLE_CLIENT_SECRET,
                     script: code,
+                    stdin: stdin,
                     language: this.mapLanguage(language),
-                    versionIndex: "0"
+                    versionIndex: "5",
+                    compileOnly: false
                 })
             });
             
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
+            const result = await response.json();
+            
+            if (result.error) {
+                return {
+                    output: '',
+                    error: result.error,
+                    memory: 0,
+                    cpuTime: 0
+                };
             }
             
-            const result = await response.json();
             return {
                 output: result.output || 'No output',
                 error: result.error || null,
@@ -60,54 +110,94 @@ export class CodeExecutor {
                 cpuTime: result.cpuTime || 0
             };
         } catch (error) {
-            // Fallback to simulation if proxy server not running
-            console.warn('Proxy server not available, using simulation mode');
-            return this.simulateExecution(code, language);
+            return {
+                output: '',
+                error: error.message,
+                memory: 0,
+                cpuTime: 0
+            };
         }
     }
 
-    static simulateExecution(code, language) {
-        // Extract input value if present
-        const inputMatch = code.match(/input\s*=\s*["'](.*?)["']/) || 
-                          code.match(/val input\s*=\s*["'](.*?)["']/) || 
-                          code.match(/const input\s*=\s*["'](.*?)["']/);
-        const inputValue = inputMatch ? inputMatch[1] : '';
+    static async executeWithTestCases(code, language, testCases) {
+        if (!testCases || testCases.length === 0) {
+            return await this.execute(code, language);
+        }
+
+        // Format input: test count first, then all test inputs
+        const combinedInput = `${testCases.length}\n${testCases.map(tc => tc.input).join('\n')}`;
         
+        try {
+            const result = await this.execute(code, language, combinedInput);
+            
+            if (result.error) {
+                return { error: result.error, testResults: [] };
+            }
+            
+            // Parse outputs for each test case
+            const outputs = result.output.trim().split('\n');
+            const testResults = testCases.map((testCase, index) => {
+                const actualOutput = outputs[index] || '';
+                const expected = testCase.output.trim();
+                const passed = this.isOutputMatch(actualOutput.trim(), expected);
+                
+                return {
+                    input: testCase.input,
+                    expected: expected,
+                    actual: actualOutput.trim(),
+                    passed: passed
+                };
+            });
+            
+            return {
+                error: null,
+                testResults: testResults,
+                memory: result.memory,
+                cpuTime: result.cpuTime
+            };
+            
+        } catch (error) {
+            return { error: error.message, testResults: [] };
+        }
+    }
+
+
+
+    static isOutputMatch(actual, expected) {
+        if (actual === expected) return true;
+        
+        // Flexible matching for numbers
+        if (!isNaN(actual) && !isNaN(expected)) {
+            return parseFloat(actual) === parseFloat(expected);
+        }
+        
+        // Case insensitive for strings
+        return actual.toLowerCase() === expected.toLowerCase();
+    }
+
+    static simulateExecution(code, language, stdin = "") {
+        // Smart simulation based on code patterns
         let output = '';
         
-        // Smart simulation based on code patterns and input
-        if (code.includes('reverse')) {
-            output = inputValue ? inputValue.split('').reverse().join('') : 'dcba';
+        if (code.includes('Hello') || code.includes('hello')) {
+            output = 'Hello, World!';
+        } else if (code.includes('print')) {
+            // Extract content from print statements
+            const printMatch = code.match(/print\s*\(\s*["'`]([^"'`]*)["'`]\s*\)/);
+            output = printMatch ? printMatch[1] : 'Simulated output';
+        } else if (code.includes('console.log')) {
+            const logMatch = code.match(/console\.log\s*\(\s*["'`]([^"'`]*)["'`]\s*\)/);
+            output = logMatch ? logMatch[1] : 'Simulated output';
         } else if (code.includes('factorial')) {
-            const num = parseInt(inputValue) || 5;
-            let fact = 1;
-            for (let i = 2; i <= num; i++) fact *= i;
-            output = fact.toString();
-        } else if (code.includes('fibonacci') || code.includes('fib')) {
-            const num = parseInt(inputValue) || 7;
-            if (num <= 1) output = num.toString();
-            else {
-                let a = 0, b = 1;
-                for (let i = 2; i <= num; i++) [a, b] = [b, a + b];
-                output = b.toString();
-            }
-        } else if (code.includes('sum') || code.includes('add')) {
-            const nums = (inputValue || '1 2 3 4 5').match(/\d+/g);
-            if (nums) {
-                const sum = nums.reduce((a, b) => parseInt(a) + parseInt(b), 0);
-                output = sum.toString();
-            } else output = '15';
-        } else if (code.includes('palindrome')) {
-            const str = inputValue || 'racecar';
-            const isPalindrome = str === str.split('').reverse().join('');
-            output = isPalindrome.toString();
-        } else if (code.includes('Hello') || code.includes('hello')) {
-            output = 'Hello World';
-        } else if (code.includes('println') || code.includes('print') || code.includes('console.log')) {
-            output = inputValue || 'Program output';
+            output = '120';
+        } else if (code.includes('fibonacci')) {
+            output = '13';
+        } else if (code.includes('reverse')) {
+            output = 'dcba';
+        } else if (code.includes('sum')) {
+            output = '15';
         } else {
-            // Try to extract expected output from context or use input
-            output = inputValue || '42';
+            output = 'Code executed successfully (simulated)';
         }
         
         return {
@@ -121,11 +211,23 @@ export class CodeExecutor {
     static mapLanguage(lang) {
         const mapping = {
             'scala': 'scala',
-            'javascript': 'nodejs',
+            'javascript': '',
             'python': 'python3',
             'java': 'java',
             'cpp': 'cpp17'
         };
         return mapping[lang] || 'scala';
+    }
+
+    static versionLanguage(lang) {
+        const mapping = {
+            'scala': 5,
+            'javascript': 0,
+            'python': 5,
+            'java': 5,
+            'cpp': 2
+        }
+
+        return mapping[lang] || 5;
     }
 }

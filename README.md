@@ -34,11 +34,11 @@ JDOODLE_CLIENT_SECRET: 'your_jdoodle_secret'
 
 ### 3. Run Locally
 ```bash
-# Method 1: Full setup (web + code execution)
+# Method 1: Use start script (recommended)
 ./start.sh
 
 # Method 2: Manual setup
-# Terminal 1: Start proxy for code execution
+# Terminal 1: Start proxy for JDoodle API
 python3 proxy-server.py
 
 # Terminal 2: Start web server
@@ -47,8 +47,8 @@ python3 server.py
 
 **⚠️ Important**: 
 - ES6 modules require HTTP server - don't open index.html directly!
-- For real code execution, both servers must be running
-- Demo mode works with just the web server
+- Proxy server needed to avoid CORS issues with JDoodle API
+- Demo mode works without API keys (simulation mode)
 
 ## Usage
 
@@ -83,7 +83,7 @@ js/
 
 ✅ **Problem Persistence**: Switch rounds without losing problems  
 ✅ **Monaco Editor**: Professional coding environment  
-✅ **Real Execution**: Actual code compilation via JDoodle  
+✅ **Real Execution**: JDoodle API integration via proxy server  
 ✅ **Modular Design**: Clean, maintainable architecture  
 ✅ **Multi-Language**: Support for 5+ programming languages with Scala 3 default  
 ✅ **Test Cases**: Automated test case generation and execution  

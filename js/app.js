@@ -1,6 +1,7 @@
 import { UIManager } from './ui.js';
 import { RoundManager } from './rounds.js';
 import { SpeechManager } from './speech.js';
+import { TimerManager } from './timer.js';
 import { state } from './state.js';
 
 class InterviewApp {
@@ -8,6 +9,7 @@ class InterviewApp {
         this.ui = new UIManager();
         this.roundManager = new RoundManager(this.ui);
         this.speechManager = new SpeechManager();
+        this.timerManager = new TimerManager();
         this.initializeEventListeners();
     }
 
@@ -40,6 +42,16 @@ class InterviewApp {
             this.handleHintRequest(e.detail.question);
         });
 
+        // Diagram submission handler
+        document.addEventListener('diagramSubmitted', (e) => {
+            this.handleDiagramSubmission(e.detail.diagramXML, e.detail.roundType);
+        });
+
+        // Timer event handler
+        document.addEventListener('timeUp', (e) => {
+            this.handleTimeUp(e.detail.roundType);
+        });
+
         // Speech recognition callbacks
         this.speechManager.onTranscript = (transcript) => {
             this.ui.textInput.value = transcript;
@@ -57,13 +69,25 @@ class InterviewApp {
     }
 
     async startRound(roundType) {
+        // Check if there's an active round that needs to be handled first
+        if (state.currentRound && state.currentRound !== roundType) {
+            const confirmed = confirm(`You have an active ${state.currentRound.toUpperCase()} round. You must submit your solution or end the round before switching. Do you want to end the current round?`);
+            if (!confirmed) {
+                return; // Don't switch rounds
+            }
+            this.endCurrentRound();
+        }
+        
         state.setCurrentRound(roundType);
         
         // Setup UI for the round
         await this.ui.setupRound(roundType);
         
-        // Initialize round content
+        // Initialize round content first
         await this.roundManager.initializeRound(roundType);
+        
+        // Start timer after everything is set up
+        this.timerManager.startTimer(roundType);
     }
 
     toggleVoiceMode() {
@@ -119,9 +143,13 @@ class InterviewApp {
 
     endCurrentRound() {
         if (state.currentRound) {
+            this.timerManager.stopTimer(state.currentRound);
             state.completeRound(state.currentRound);
             this.ui.markRoundCompleted(state.currentRound);
+            const completedRound = state.currentRound;
             state.setCurrentRound(null);
+            
+            this.ui.setFeedback(`${completedRound.toUpperCase()} round completed successfully!`);
         }
         
         this.ui.showWelcomeScreen();
@@ -156,11 +184,36 @@ class InterviewApp {
         this.ui.setFeedback('Fetching fresh problem...');
         
         try {
+            // Stop current timer and restart with fresh problem
+            this.timerManager.stopTimer(state.currentRound);
             await this.roundManager.refreshProblem(state.currentRound, difficulty);
+            this.timerManager.startTimer(state.currentRound);
             this.ui.setFeedback('Fresh problem loaded successfully!');
         } catch (error) {
             this.ui.setFeedback(`Error fetching problem: ${error.message}`);
         }
+    }
+
+    async handleDiagramSubmission(diagramXML, roundType) {
+        this.ui.setFeedback('Evaluating your diagram...');
+        
+        try {
+            const evaluation = await this.roundManager.evaluateDiagram(diagramXML, roundType);
+            this.ui.setFeedback(`<div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;"><strong>📊 Diagram Evaluation:</strong><br><br>${evaluation.replace(/\n/g, '<br>')}</div>`);
+        } catch (error) {
+            this.ui.setFeedback(`Error evaluating diagram: ${error.message}`);
+        }
+    }
+
+    handleTimeUp(roundType) {
+        this.ui.setFeedback(`<div style="background: #fff3cd; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107;"><strong>⏰ Time's Up!</strong><br><br>The ${roundType.toUpperCase()} round has ended. Please submit your final answer or move to the next round.</div>`);
+        
+        // Auto-end round after 30 seconds grace period
+        setTimeout(() => {
+            if (state.currentRound === roundType) {
+                this.endCurrentRound();
+            }
+        }, 30000);
     }
 }
 
